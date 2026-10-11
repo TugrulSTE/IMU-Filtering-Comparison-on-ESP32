@@ -1,53 +1,57 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
+# Real-Time IMU Signal Filtering Benchmark on ESP32 (FreeRTOS)
 
-# Hello World Example
+Comparative evaluation of real-time digital filtering algorithms applied to raw acceleration data from an MPU-6500 6-axis IMU via I2C at 50 Hz.
 
-Starts a FreeRTOS task to print "Hello World".
+This project benchmarks **Simple Moving Average (SMA)**, **Exponential Moving Average (EMA)** with different alpha coefficients, and a discrete **1D Kalman Filter** directly on the ESP32 to evaluate latency (phase lag) vs. noise attenuation trade-offs.
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+---
 
-## How to use example
+## 📈 Real-Time Filter Response & Telemetry Analysis
 
-Follow detailed instructions provided specifically for this example.
+The following serial plots compare the transient response, noise reduction, and phase lag across identical accelerometer input sequences sampled at 50 Hz (`115200 baud`).
 
-Select the instructions depending on Espressif chip installed on your development board:
+### 1. High-Frequency Noise & Oscillation Rejection
+![High-Frequency Noise Rejection](docs/filter_noise_response.png)
 
-- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
-- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
+* **Raw Data (Blue):** High jitter and raw sensor noise.
+* **SMA N=10 (Orange):** Heavily attenuates rapid oscillations, but flattens high-frequency signal dynamics.
+* **EMA $\alpha=0.8$ (Yellow):** Highly responsive with minimal delay, but lets high-frequency jitter pass through.
+* **EMA $\alpha=0.4$ (Green) & Kalman (Purple):** Deliver an optimal balance by filtering out sharp spikes without sacrificing overall dynamic trend.
 
+---
 
-## Example folder contents
+### 2. Step Response & Phase Lag (Transient Motion)
+![Step Response and Phase Lag](docs/filter_step_lag.png)
 
-The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
+* **Phase Lag Demonstration:** During sudden acceleration changes, the **SMA buffer introduces visible delay (phase lag)**, trailing far behind the actual motion curve.
+* **Kalman vs. EMA Adaptation:** The **Kalman Filter** dynamically weights sensor covariance to track the rising edge with near-zero lag while suppressing noise floor vibrations.
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
+---
 
-Below is short explanation of remaining files in the project folder.
+## 📊 Algorithmic Comparison
 
-```
-├── CMakeLists.txt
-├── pytest_hello_world.py      Python script used for automated testing
-├── main
-│   ├── CMakeLists.txt
-│   └── hello_world_main.c
-└── README.md                  This is the file you are currently reading
-```
+| Filter Algorithm | Tuned Parameters | Latency / Phase Lag | Noise Attenuation | Memory Footprint | Computational Complexity |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Raw Accel** | N/A | None (0 ms) | Poor (Raw ADC Noise) | None | None |
+| **SMA** | $N = 10$ samples | High (Buffer delay) | Moderate | Ring buffer ($N$ floats) | $O(N)$ sum / sliding window |
+| **EMA ($\alpha=0.8$)** | $\alpha = 0.8$ | Very Low | Weak | Single state variable | $O(1)$ single MAC operation |
+| **EMA ($\alpha=0.4$)** | $\alpha = 0.4$ | Low | Good | Single state variable | $O(1)$ single MAC operation |
+| **Kalman Filter** | $Q=0.15, R=0.4$ | Minimal (Adaptive Gain) | Superior | State & Covariance floats | $O(1)$ dynamic gain calculation |
 
-For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
+---
 
-## Troubleshooting
+## 📌 Implementation Details
 
-* Program upload failure
+* **Target Hardware:** Espressif ESP32 (Xtensa LX6)
+* **Sensor:** InvenSense MPU-6500 (I2C Master @ 400 kHz Fast Mode)
+* **Sampling Architecture:** Deterministic 50 Hz task loop (`pdMS_TO_TICKS(20)`) managed by FreeRTOS.
+* **Sensor Configuration:** Full-scale accelerometer range $\pm2g$ ($16384 \text{ LSB/g}$).
 
-    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
-    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
+---
 
-## Technical support and feedback
+## 🚀 Build and Run
 
-Please use the following feedback channels:
-
-* For technical queries, go to the [esp32.com](https://esp32.com/) forum
-* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
-
-We will get back to you as soon as possible.
+1. **Build and Flash via ESP-IDF:**
+   ```bash
+   idf.py build
+   idf.py -p <PORT> flash monitor
